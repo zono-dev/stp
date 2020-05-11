@@ -14,7 +14,7 @@ I knew [Cloudinary](https://cloudinary.com/) after I finished to make stp/stph..
 Anyway, at this time, I have plans to add some features to stp/stph for enjoying Go and AWS.
 
 
-# Features: ver.0.1.0
+# Features: v0.0.1
 
 - Automatically resizing images when the images are uploaded into your S3 bucket.
 - Managiment your images in AWS S3 bucket with `stph`.

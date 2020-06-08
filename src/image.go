@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
-	"image/gif"
-	"image/jpeg"
-	"image/png"
 	"math/rand"
 	"net/http"
 	"os"
@@ -17,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"golang.org/x/image/draw"
+	"github.com/disintegration/imaging"
 )
 
 // base file name
@@ -64,36 +61,27 @@ func ResizePercentage(sx, sy, rex, rey int) float64 {
 }
 
 // CreateNewImage
-func CreateNewImage(srcImg image.Image, dsizex, dsizey int, t string) (string, error) {
+func CreateNewImage(srcImg image.Image, dsizex, dsizey int, t imaging.Format) (string, error) {
 	MyPrintf("dsizex", strconv.Itoa(dsizex))
 	MyPrintf("dsizey", strconv.Itoa(dsizey))
 
-	imgDst := image.NewRGBA(image.Rect(0, 0, dsizex, dsizey))
-	draw.CatmullRom.Scale(imgDst, imgDst.Bounds(), srcImg, srcImg.Bounds(), draw.Over, nil)
-
 	tmppath := "/tmp/tmp-image"
-	dst, err := os.Create(tmppath)
-	if err != nil {
+	switch t {
+	case imaging.JPEG:
+		tmppath += ".jpg"
+	case imaging.GIF:
+		tmppath += ".gif"
+	case imaging.PNG:
+		tmppath += ".png"
+	}
+
+	imgDst := imaging.Resize(srcImg, dsizex, dsizey, imaging.Lanczos)
+	if err := imaging.Save(imgDst, tmppath); err != nil {
 		MyPrintErr(err)
 		return "", err
 	}
 
-	switch t {
-	case "jpeg":
-		if err := jpeg.Encode(dst, imgDst, &jpeg.Options{Quality: 100}); err != nil {
-			MyPrintErr(err)
-		}
-	case "gif":
-		if err := gif.Encode(dst, imgDst, nil); err != nil {
-			MyPrintErr(err)
-		}
-	case "png":
-		if err := png.Encode(dst, imgDst); err != nil {
-			MyPrintErr(err)
-		}
-	}
-
-	return tmppath, err
+	return tmppath, nil
 }
 
 func PutFileToS3(s3svc *s3.S3, bucket, path, fname string, tmppath string) (string, error) {
@@ -133,14 +121,14 @@ func PutFileToS3(s3svc *s3.S3, bucket, path, fname string, tmppath string) (stri
 	return upath, err
 }
 
-func CreateNewFileName(t, prefix string) string {
+func CreateNewFileName(t imaging.Format, prefix string) string {
 	rand.Seed(time.Now().UnixNano())
 	switch t {
-	case "jpeg":
+	case imaging.JPEG:
 		return (fmt.Sprintf(basefilename, prefix, RandString(16), "jpg"))
-	case "gif":
+	case imaging.GIF:
 		return (fmt.Sprintf(basefilename, prefix, RandString(16), "gif"))
-	case "png":
+	case imaging.PNG:
 		return (fmt.Sprintf(basefilename, prefix, RandString(16), "png"))
 	}
 	return ""
@@ -163,12 +151,19 @@ func ResizeImage(bucket, srcpath, dstpath, prefix string, rex, rey int) (Resized
 	}
 	defer srcObject.Body.Close()
 
-	img, t, err := image.Decode(srcObject.Body)
+	// Decode Object into image.Image
+	img, err := imaging.Decode((srcObject.Body), imaging.AutoOrientation(true))
 	if err != nil {
 		MyPrintErr(err)
 		return out, err
 	}
-	MyPrintf("TypeOfImage", t)
+	// Gussing format from filename
+	t, err := imaging.FormatFromFilename(srcpath)
+	if err != nil {
+		MyPrintErr(err)
+		return out, err
+	}
+	MyPrintf("TypeOfImage", t.String())
 
 	// get size of a target image
 	rct := img.Bounds()
@@ -189,7 +184,7 @@ func ResizeImage(bucket, srcpath, dstpath, prefix string, rex, rey int) (Resized
 	out.FileName = CreateNewFileName(t, prefix)
 	out.ResizedFilePath, err = PutFileToS3(s3svc, bucket, dstpath, out.FileName, tmppath)
 	out.CreatedAt = time.Now()
-	out.TypeOfFile = t
+	out.TypeOfFile = t.String()
 
 	return out, err
 }

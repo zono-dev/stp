@@ -1,12 +1,14 @@
 locals {
   lambda_function_name = "${var.lambda.function_name_prefix}-${random_string.lower.result}"
+  file_path = "../bin/function.zip"
 }
 
 
 resource "aws_lambda_function" "stp_lambda" {
-  filename      = "../bin/function.zip"
+  filename      = local.file_path
   function_name = local.lambda_function_name
   handler       = var.lambda.handler
+  source_code_hash = filebase64sha256(local.file_path)
   timeout       = var.lambda.timeout
   memory_size   = var.lambda.memory_size
   role          = aws_iam_role.role_for_stp.arn
